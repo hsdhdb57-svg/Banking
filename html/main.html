@@ -1,8 +1,7 @@
 <section class="hero">
     <div>
-        <p class="eyebrow">Java + SQL</p>
         <h1>Мини-банкинг</h1>
-        <p>Счета, переводы, транзакции, карты и просмотр базы данных.</p>
+        <p>Счета, карты, переводы по номеру карты, история операций и просмотр базы данных.</p>
     </div>
     <div class="actions">
         <a class="button primary" href="/account">Личный кабинет</a>
@@ -16,6 +15,12 @@
         <form method="post" action="/create-account">
             <label>Имя пользователя
                 <input name="owner" required maxlength="120" placeholder="Например: Анна">
+            </label>
+            <label>Логин
+                <input name="username" required maxlength="80" placeholder="anna">
+            </label>
+            <label>Пароль
+                <input name="password" required type="password" placeholder="Введите пароль">
             </label>
             <label>Начальный баланс
                 <input name="balance" required inputmode="decimal" placeholder="1000.00">

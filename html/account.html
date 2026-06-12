@@ -1,17 +1,20 @@
 <section class="account-head">
     <div>
-        <p class="eyebrow">Счет #{{accountId}}</p>
+        <p class="eyebrow">Аккаунт {{username}}</p>
         <h1>{{owner}}</h1>
-        <p class="balance">{{balance}}</p>
     </div>
-    <form method="get" action="/account" class="login-inline">
-        <label>Другой ID
-            <input name="id" inputmode="numeric" placeholder="1">
-        </label>
-        <button class="button" type="submit">Войти</button>
-    </form>
+    <a class="button" href="/account">Выйти</a>
 </section>
+
 {{message}}
+
+{{cards}}
+
+<section class="balance-panel">
+    <span>Баланс выбранной карты</span>
+    <strong id="cardBalance">{{balance}}</strong>
+</section>
+
 <section class="grid three">
     <div class="panel">
         <h2>Пополнение</h2>
@@ -37,8 +40,8 @@
         <h2>Перевод</h2>
         <form method="post" action="/account/transfer">
             <input type="hidden" name="fromId" value="{{accountId}}">
-            <label>ID получателя
-                <input name="toId" required inputmode="numeric" placeholder="2">
+            <label>Номер карты получателя
+                <input name="toCard" required inputmode="numeric" maxlength="19" placeholder="4000 1234 5678 9012">
             </label>
             <label>Сумма
                 <input name="amount" required inputmode="decimal" placeholder="300.00">
@@ -47,19 +50,37 @@
         </form>
     </div>
 </section>
-<section class="grid two">
-    <div class="panel">
-        <div class="section-title">
-            <h2>Карты</h2>
-            <form method="post" action="/account/card">
-                <input type="hidden" name="id" value="{{accountId}}">
-                <button class="icon-button" title="Выпустить карту" aria-label="Выпустить карту">+</button>
-            </form>
-        </div>
-        {{cards}}
-    </div>
-    <div class="panel">
-        <h2>История счета</h2>
-        {{transactions}}
-    </div>
+
+<section class="panel history-panel">
+    <h2>История счета</h2>
+    {{transactions}}
 </section>
+
+<script>
+function copyText(value) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(value);
+        return;
+    }
+    const input = document.createElement('input');
+    input.value = value;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+}
+
+function toggleCardNumber(button) {
+    const full = button.dataset.full;
+    const mask = button.dataset.mask;
+    const isOpen = button.textContent === full;
+    button.textContent = isOpen ? mask : full;
+    copyText(full);
+}
+
+function scrollCards(direction) {
+    const list = document.getElementById('cardsList');
+    if (!list) return;
+    list.scrollBy({ left: direction * 340, behavior: 'smooth' });
+}
+</script>

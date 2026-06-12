@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 public record Account(
         long id,
         String owner,
+        String username,
         BigDecimal balance,
         String status,
         LocalDateTime createdAt

@@ -1,5 +1,7 @@
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -19,13 +21,20 @@ public class BankService {
     }
 
     public Account createAccount(String owner, BigDecimal initialBalance) throws SQLException {
+        String generatedUsername = "user" + System.currentTimeMillis();
+        return createAccount(owner, generatedUsername, "1234", initialBalance);
+    }
+
+    public Account createAccount(String owner, String username, String password, BigDecimal initialBalance) throws SQLException {
         String cleanOwner = requireText(owner, "Owner");
+        String cleanUsername = requireText(username, "Username").toLowerCase();
+        String cleanPassword = requireText(password, "Password");
         BigDecimal amount = normalizeNonNegative(initialBalance, "Initial balance");
 
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                long accountId = insertAccount(connection, cleanOwner, amount);
+                long accountId = insertAccount(connection, cleanOwner, cleanUsername, hashPassword(cleanPassword), amount);
                 BankCard card = insertCard(connection, accountId);
                 if (amount.compareTo(BigDecimal.ZERO) > 0) {
                     insertTransaction(connection, accountId, "INITIAL_DEPOSIT", amount, null, null,
@@ -40,6 +49,28 @@ public class BankService {
             } catch (Exception e) {
                 connection.rollback();
                 throw e;
+            }
+        }
+    }
+
+    public Account authenticate(String username, String password) throws SQLException {
+        String cleanUsername = requireText(username, "Username").toLowerCase();
+        String cleanPassword = requireText(password, "Password");
+        String sql = """
+                SELECT id, owner, username, balance, status, created_at
+                FROM accounts
+                WHERE username = ? AND password_hash = ?
+                """;
+
+        try (Connection connection = database.connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, cleanUsername);
+            statement.setString(2, hashPassword(cleanPassword));
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException("Wrong username or password");
+                }
+                return mapAccount(resultSet);
             }
         }
     }
@@ -85,6 +116,16 @@ public class BankService {
     }
 
     public long transfer(long fromAccountId, long toAccountId, BigDecimal amount) throws SQLException {
+        return transferToAccount(fromAccountId, toAccountId, amount, "account " + toAccountId);
+    }
+
+    public long transferToCard(long fromAccountId, String toCardNumber, BigDecimal amount) throws SQLException {
+        String cleanCardNumber = normalizeCardNumber(toCardNumber);
+        BankCard targetCard = getCardByNumber(cleanCardNumber);
+        return transferToAccount(fromAccountId, targetCard.accountId(), amount, "card " + cleanCardNumber);
+    }
+
+    private long transferToAccount(long fromAccountId, long toAccountId, BigDecimal amount, String targetLabel) throws SQLException {
         if (fromAccountId == toAccountId) {
             throw new IllegalArgumentException("Cannot transfer money to the same account");
         }
@@ -110,7 +151,7 @@ public class BankService {
                 updateBalance(connection, toAccountId, toBalance);
                 long transferId = insertTransfer(connection, fromAccountId, toAccountId, money, "COMPLETED");
                 insertTransaction(connection, fromAccountId, "TRANSFER_OUT", money, toAccountId, transferId,
-                        "Transfer to account " + toAccountId);
+                        "Transfer to " + targetLabel);
                 insertTransaction(connection, toAccountId, "TRANSFER_IN", money, fromAccountId, transferId,
                         "Transfer from account " + fromAccountId);
                 insertHistory(connection, "TRANSFER", transferId, "COMPLETED",
@@ -153,7 +194,7 @@ public class BankService {
 
     public List<Account> listAccounts() throws SQLException {
         String sql = """
-                SELECT id, owner, balance, status, created_at
+                SELECT id, owner, username, balance, status, created_at
                 FROM accounts
                 ORDER BY id
                 """;
@@ -165,6 +206,24 @@ public class BankService {
                 accounts.add(mapAccount(resultSet));
             }
             return accounts;
+        }
+    }
+
+    public BankCard getCardByNumber(String cardNumber) throws SQLException {
+        String sql = """
+                SELECT id, account_id, card_number, expires_at, status, created_at
+                FROM bank_cards
+                WHERE card_number = ?
+                """;
+        try (Connection connection = database.connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, normalizeCardNumber(cardNumber));
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException("Card was not found");
+                }
+                return mapCard(resultSet);
+            }
         }
     }
 
@@ -297,11 +356,13 @@ public class BankService {
         }
     }
 
-    private long insertAccount(Connection connection, String owner, BigDecimal balance) throws SQLException {
-        String sql = "INSERT INTO accounts(owner, balance) VALUES (?, ?)";
+    private long insertAccount(Connection connection, String owner, String username, String passwordHash, BigDecimal balance) throws SQLException {
+        String sql = "INSERT INTO accounts(owner, username, password_hash, balance) VALUES (?, ?, ?, ?)";
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, owner);
-            statement.setBigDecimal(2, balance);
+            statement.setString(2, username);
+            statement.setString(3, passwordHash);
+            statement.setBigDecimal(4, balance);
             statement.executeUpdate();
             return generatedId(statement);
         }
@@ -357,7 +418,7 @@ public class BankService {
 
     private Account findAccount(Connection connection, long accountId, boolean forUpdate) throws SQLException {
         String sql = """
-                SELECT id, owner, balance, status, created_at
+                SELECT id, owner, username, balance, status, created_at
                 FROM accounts
                 WHERE id = ?
                 """ + (forUpdate ? " FOR UPDATE" : "");
@@ -407,6 +468,7 @@ public class BankService {
         return new Account(
                 resultSet.getLong("id"),
                 resultSet.getString("owner"),
+                resultSet.getString("username"),
                 resultSet.getBigDecimal("balance"),
                 resultSet.getString("status"),
                 createdAt.toLocalDateTime()
@@ -480,6 +542,28 @@ public class BankService {
             number.append(random.nextInt(10));
         }
         return number.toString();
+    }
+
+    private static String normalizeCardNumber(String value) {
+        String cleanValue = requireText(value, "Card number").replace(" ", "");
+        if (!cleanValue.matches("\\d{16}")) {
+            throw new IllegalArgumentException("Card number must contain 16 digits");
+        }
+        return cleanValue;
+    }
+
+    private static String hashPassword(String password) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(password.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (byte b : bytes) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 }
 

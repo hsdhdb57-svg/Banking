@@ -109,6 +109,26 @@ main {
     color: #126f6a;
 }
 
+.balance-panel {
+    display: grid;
+    gap: 6px;
+    padding: 18px 22px;
+    margin: 18px 0;
+    background: #ffffff;
+    border: 1px solid #dde5ee;
+    border-radius: 8px;
+}
+
+.balance-panel span {
+    color: #667085;
+    font-weight: 700;
+}
+
+.balance-panel strong {
+    color: #126f6a;
+    font-size: 34px;
+}
+
 .actions {
     display: flex;
     gap: 10px;
@@ -257,19 +277,49 @@ tr:last-child td {
     color: #667085;
 }
 
-.cards-list {
+.card-carousel {
     display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
     gap: 12px;
+    align-items: center;
+    margin: 18px 0;
+}
+
+.cards-list {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding: 2px;
 }
 
 .bank-card {
-    min-height: 130px;
+    min-width: min(360px, 82vw);
+    min-height: 190px;
     border-radius: 8px;
-    padding: 18px;
+    padding: 22px;
     display: grid;
     align-content: space-between;
     color: #ffffff;
     background: linear-gradient(135deg, #17202a, #126f6a 70%, #b94700);
+    scroll-snap-align: center;
+    border: 0;
+    text-align: left;
+}
+
+.add-card-form {
+    display: block;
+    flex: 0 0 auto;
+}
+
+.add-card {
+    align-items: center;
+    justify-content: center;
+    border: 2px dashed #9fb2c8;
+    color: #126f6a;
+    background: #ffffff;
+    font-size: 54px;
+    font-weight: 700;
 }
 
 .bank-card span,
@@ -277,13 +327,76 @@ tr:last-child td {
     opacity: .86;
 }
 
-.bank-card strong {
+.card-number {
+    border: 0;
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
     font-size: 22px;
     letter-spacing: 0;
+    font-weight: 800;
+    padding: 0;
+    text-align: left;
+}
+
+.card-nav {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    border: 1px solid #c8d2df;
+    background: #ffffff;
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.history-list {
+    display: grid;
+    gap: 10px;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid #e3e9f1;
+}
+
+.history-item:last-child {
+    border-bottom: 0;
+}
+
+.history-item span {
+    color: #667085;
+    white-space: nowrap;
+}
+
+.history-item.positive strong {
+    color: #126f6a;
+}
+
+.history-item.negative strong {
+    color: #b94700;
 }
 
 .database-table {
     margin-top: 18px;
+}
+
+.delete-form {
+    display: inline;
+}
+
+.danger-button {
+    min-height: 34px;
+    border: 1px solid #f1baa6;
+    border-radius: 8px;
+    background: #fff0eb;
+    color: #b94700;
+    cursor: pointer;
+    font-weight: 700;
+    padding: 7px 10px;
 }
 
 @media (max-width: 850px) {
@@ -308,5 +421,14 @@ tr:last-child td {
 
     .login-inline {
         grid-template-columns: 1fr;
+    }
+
+    .card-carousel {
+        grid-template-columns: 34px minmax(0, 1fr) 34px;
+    }
+
+    .history-item {
+        flex-direction: column;
+        gap: 4px;
     }
 }
