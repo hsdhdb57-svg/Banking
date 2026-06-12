@@ -111,7 +111,7 @@ public class WebBankApp {
 
     private String databasePage(Map<String, String> query) throws SQLException {
         String tables = tableSection("accounts", "accounts",
-                "SELECT id, owner, username, password_hash, balance, status, created_at FROM accounts ORDER BY id")
+                "SELECT id, owner, username, password, balance, status, created_at FROM accounts ORDER BY id")
                 + tableSection("bank_cards", "bank_cards",
                 "SELECT id, account_id, card_number, expires_at, status, created_at FROM bank_cards ORDER BY id")
                 + tableSection("transfers", "transfers",

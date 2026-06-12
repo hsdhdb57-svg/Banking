@@ -1,7 +1,5 @@
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,7 +32,7 @@ public class BankService {
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                long accountId = insertAccount(connection, cleanOwner, cleanUsername, hashPassword(cleanPassword), amount);
+                long accountId = insertAccount(connection, cleanOwner, cleanUsername, cleanPassword, amount);
                 BankCard card = insertCard(connection, accountId);
                 if (amount.compareTo(BigDecimal.ZERO) > 0) {
                     insertTransaction(connection, accountId, "INITIAL_DEPOSIT", amount, null, null,
@@ -59,13 +57,13 @@ public class BankService {
         String sql = """
                 SELECT id, owner, username, balance, status, created_at
                 FROM accounts
-                WHERE username = ? AND password_hash = ?
+                WHERE username = ? AND password = ?
                 """;
 
         try (Connection connection = database.connect();
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, cleanUsername);
-            statement.setString(2, hashPassword(cleanPassword));
+            statement.setString(2, cleanPassword);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     throw new IllegalArgumentException("Wrong username or password");
@@ -356,12 +354,12 @@ public class BankService {
         }
     }
 
-    private long insertAccount(Connection connection, String owner, String username, String passwordHash, BigDecimal balance) throws SQLException {
-        String sql = "INSERT INTO accounts(owner, username, password_hash, balance) VALUES (?, ?, ?, ?)";
+    private long insertAccount(Connection connection, String owner, String username, String password, BigDecimal balance) throws SQLException {
+        String sql = "INSERT INTO accounts(owner, username, password, balance) VALUES (?, ?, ?, ?)";
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setString(1, owner);
             statement.setString(2, username);
-            statement.setString(3, passwordHash);
+            statement.setString(3, password);
             statement.setBigDecimal(4, balance);
             statement.executeUpdate();
             return generatedId(statement);
@@ -552,18 +550,5 @@ public class BankService {
         return cleanValue;
     }
 
-    private static String hashPassword(String password) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] bytes = digest.digest(password.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (byte b : bytes) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
-    }
 }
 

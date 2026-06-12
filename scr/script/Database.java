@@ -58,9 +58,9 @@ public class Database {
 
     private void runMigrations(Connection connection) throws SQLException {
         execute(connection, "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS username VARCHAR(80)");
-        execute(connection, "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS password_hash VARCHAR(64)");
+        execute(connection, "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS password VARCHAR(120)");
         execute(connection, "UPDATE accounts SET username = 'user' || id WHERE username IS NULL OR username = ''");
-        execute(connection, "UPDATE accounts SET password_hash = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4' WHERE password_hash IS NULL OR password_hash = ''");
+        execute(connection, "UPDATE accounts SET password = '1234' WHERE password IS NULL OR password = ''");
         execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username)");
     }
 
