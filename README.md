@@ -1,1 +1,1 @@
-Bankingв
+Banking
