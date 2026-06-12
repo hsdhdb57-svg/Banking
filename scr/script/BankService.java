@@ -113,6 +113,10 @@ public class BankService {
         }
     }
 
+    public long transfer(long fromAccountId, long toAccountId, BigDecimal amount) throws SQLException {
+        return transferToAccount(fromAccountId, toAccountId, amount, "account " + toAccountId);
+    }
+
     public long transferToCard(long fromAccountId, String toCardNumber, BigDecimal amount) throws SQLException {
         String cleanCardNumber = normalizeCardNumber(toCardNumber);
         BankCard targetCard = getCardByNumber(cleanCardNumber);

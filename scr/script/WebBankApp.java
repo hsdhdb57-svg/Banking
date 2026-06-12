@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 public class WebBankApp {
-    private static final int PORT = 8080;
+    private static final int DEFAULT_PORT = 8080;
 
     private final Database database;
     private final BankService bankService;
@@ -34,11 +34,20 @@ public class WebBankApp {
         BankService bankService = new BankService(database);
         WebBankApp app = new WebBankApp(database, bankService);
 
-        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
+        int port = port();
+        HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", app::handle);
         server.start();
 
-        System.out.println("Banking site is running: http://127.0.0.1:" + PORT + "/");
+        System.out.println("Banking site is running on port " + port);
+    }
+
+    private static int port() {
+        String value = System.getenv("PORT");
+        if (value == null || value.isBlank()) {
+            return DEFAULT_PORT;
+        }
+        return Integer.parseInt(value);
     }
 
     private void handle(HttpExchange exchange) throws IOException {
