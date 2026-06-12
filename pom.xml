@@ -3,8 +3,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example</groupId>
-    <artifactId>mini-banking-java-sql</artifactId>
+    <groupId>banking</groupId>
+    <artifactId>banking</artifactId>
     <version>1.0.0</version>
 
     <properties>
@@ -22,6 +22,20 @@
     </dependencies>
 
     <build>
+        <sourceDirectory>scr/script</sourceDirectory>
+        <resources>
+            <resource>
+                <directory>scr/bazadannih</directory>
+            </resource>
+            <resource>
+                <directory>html</directory>
+                <targetPath>html</targetPath>
+            </resource>
+            <resource>
+                <directory>css</directory>
+                <targetPath>css</targetPath>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -33,7 +47,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
-                    <mainClass>com.example.minibank.WebBankApp</mainClass>
+                    <mainClass>WebBankApp</mainClass>
                 </configuration>
             </plugin>
         </plugins>

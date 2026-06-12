@@ -1,5 +1,3 @@
-package com.example.minibank;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -18,3 +16,4 @@ public record BankCard(
         return "**** **** **** " + cardNumber.substring(cardNumber.length() - 4);
     }
 }
+

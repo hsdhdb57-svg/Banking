@@ -1,5 +1,3 @@
-package com.example.minibank;
-
 import java.time.LocalDateTime;
 
 public record ChangeHistoryEntry(
@@ -11,3 +9,4 @@ public record ChangeHistoryEntry(
         LocalDateTime createdAt
 ) {
 }
+

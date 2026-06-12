@@ -1,0 +1,65 @@
+<section class="account-head">
+    <div>
+        <p class="eyebrow">Счет #{{accountId}}</p>
+        <h1>{{owner}}</h1>
+        <p class="balance">{{balance}}</p>
+    </div>
+    <form method="get" action="/account" class="login-inline">
+        <label>Другой ID
+            <input name="id" inputmode="numeric" placeholder="1">
+        </label>
+        <button class="button" type="submit">Войти</button>
+    </form>
+</section>
+{{message}}
+<section class="grid three">
+    <div class="panel">
+        <h2>Пополнение</h2>
+        <form method="post" action="/account/deposit">
+            <input type="hidden" name="id" value="{{accountId}}">
+            <label>Сумма
+                <input name="amount" required inputmode="decimal" placeholder="250.00">
+            </label>
+            <button class="button primary" type="submit">Пополнить</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h2>Снятие</h2>
+        <form method="post" action="/account/withdraw">
+            <input type="hidden" name="id" value="{{accountId}}">
+            <label>Сумма
+                <input name="amount" required inputmode="decimal" placeholder="100.00">
+            </label>
+            <button class="button" type="submit">Снять</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h2>Перевод</h2>
+        <form method="post" action="/account/transfer">
+            <input type="hidden" name="fromId" value="{{accountId}}">
+            <label>ID получателя
+                <input name="toId" required inputmode="numeric" placeholder="2">
+            </label>
+            <label>Сумма
+                <input name="amount" required inputmode="decimal" placeholder="300.00">
+            </label>
+            <button class="button primary" type="submit">Перевести</button>
+        </form>
+    </div>
+</section>
+<section class="grid two">
+    <div class="panel">
+        <div class="section-title">
+            <h2>Карты</h2>
+            <form method="post" action="/account/card">
+                <input type="hidden" name="id" value="{{accountId}}">
+                <button class="icon-button" title="Выпустить карту" aria-label="Выпустить карту">+</button>
+            </form>
+        </div>
+        {{cards}}
+    </div>
+    <div class="panel">
+        <h2>История счета</h2>
+        {{transactions}}
+    </div>
+</section>

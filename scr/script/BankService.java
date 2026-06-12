@@ -1,5 +1,3 @@
-package com.example.minibank;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Connection;
@@ -484,3 +482,4 @@ public class BankService {
         return number.toString();
     }
 }
+

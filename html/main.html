@@ -1,0 +1,30 @@
+<section class="hero">
+    <div>
+        <p class="eyebrow">Java + SQL</p>
+        <h1>Мини-банкинг</h1>
+        <p>Счета, переводы, транзакции, карты и просмотр базы данных.</p>
+    </div>
+    <div class="actions">
+        <a class="button primary" href="/account">Личный кабинет</a>
+        <a class="button" href="/database">База данных</a>
+    </div>
+</section>
+{{message}}
+<section class="grid two">
+    <div class="panel">
+        <h2>Создать счет</h2>
+        <form method="post" action="/create-account">
+            <label>Имя пользователя
+                <input name="owner" required maxlength="120" placeholder="Например: Анна">
+            </label>
+            <label>Начальный баланс
+                <input name="balance" required inputmode="decimal" placeholder="1000.00">
+            </label>
+            <button class="button primary" type="submit">Создать</button>
+        </form>
+    </div>
+    <div class="panel">
+        <h2>Счета</h2>
+        {{accountsTable}}
+    </div>
+</section>

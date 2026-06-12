@@ -1,5 +1,3 @@
-package com.example.minibank;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -14,3 +12,4 @@ public record TransactionRecord(
         LocalDateTime createdAt
 ) {
 }
+
