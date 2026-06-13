@@ -62,6 +62,11 @@ public class Database {
         execute(connection, "UPDATE accounts SET username = 'user' || id WHERE username IS NULL OR username = ''");
         execute(connection, "UPDATE accounts SET password = '1234' WHERE password IS NULL OR password = ''");
         execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username)");
+        execute(connection, "ALTER TABLE bank_cards ADD COLUMN IF NOT EXISTS balance DECIMAL(19, 2) NOT NULL DEFAULT 0");
+        execute(connection, "UPDATE bank_cards c SET balance = (SELECT a.balance FROM accounts a WHERE a.id = c.account_id) WHERE c.balance = 0 AND c.id = (SELECT MIN(c2.id) FROM bank_cards c2 WHERE c2.account_id = c.account_id)");
+        execute(connection, "ALTER TABLE transfers ADD COLUMN IF NOT EXISTS from_card_id BIGINT");
+        execute(connection, "ALTER TABLE transfers ADD COLUMN IF NOT EXISTS to_card_id BIGINT");
+        execute(connection, "ALTER TABLE transfers DROP CONSTRAINT IF EXISTS chk_transfer_different_accounts");
     }
 
     private void execute(Connection connection, String sql) throws SQLException {

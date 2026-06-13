@@ -1,10 +1,12 @@
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 public record BankCard(
         long id,
         long accountId,
         String cardNumber,
+        BigDecimal balance,
         LocalDate expiresAt,
         String status,
         LocalDateTime createdAt

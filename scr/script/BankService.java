@@ -32,16 +32,16 @@ public class BankService {
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                long accountId = insertAccount(connection, cleanOwner, cleanUsername, cleanPassword, amount);
-                BankCard card = insertCard(connection, accountId);
+                long accountId = insertAccount(connection, cleanOwner, cleanUsername, cleanPassword, BigDecimal.ZERO);
+                BankCard card = insertCard(connection, accountId, amount);
                 if (amount.compareTo(BigDecimal.ZERO) > 0) {
                     insertTransaction(connection, accountId, "INITIAL_DEPOSIT", amount, null, null,
-                            "Initial account balance");
+                            "Initial balance on card " + card.cardNumber());
                 }
                 insertHistory(connection, "ACCOUNT", accountId, "CREATED",
-                        "Created account for " + cleanOwner + " with balance " + amount);
+                        "Created account for " + cleanOwner);
                 insertHistory(connection, "CARD", card.id(), "ISSUED",
-                        "Issued card " + card.maskedNumber() + " for account " + accountId);
+                        "Issued card " + card.maskedNumber() + " for account " + accountId + " with balance " + amount);
                 connection.commit();
                 return findAccount(connection, accountId, false);
             } catch (Exception e) {
@@ -55,9 +55,11 @@ public class BankService {
         String cleanUsername = requireText(username, "Username").toLowerCase();
         String cleanPassword = requireText(password, "Password");
         String sql = """
-                SELECT id, owner, username, balance, status, created_at
-                FROM accounts
-                WHERE username = ? AND password = ?
+                SELECT a.id, a.owner, a.username,
+                       COALESCE((SELECT SUM(c.balance) FROM bank_cards c WHERE c.account_id = a.id), a.balance) AS balance,
+                       a.status, a.created_at
+                FROM accounts a
+                WHERE a.username = ? AND a.password = ?
                 """;
 
         try (Connection connection = database.connect();
@@ -74,15 +76,24 @@ public class BankService {
     }
 
     public void deposit(long accountId, BigDecimal amount) throws SQLException {
+        BankCard card = primaryCard(accountId);
+        depositToCard(card.id(), amount);
+    }
+
+    public void depositToCard(long cardId, BigDecimal amount) throws SQLException {
         BigDecimal money = normalizePositive(amount);
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                Account account = findAccount(connection, accountId, true);
-                updateBalance(connection, accountId, account.balance().add(money));
-                insertTransaction(connection, accountId, "DEPOSIT", money, null, null, "Cash deposit");
-                insertHistory(connection, "ACCOUNT", accountId, "DEPOSIT",
-                        "Deposited " + money + "; new balance " + account.balance().add(money));
+                BankCard card = findCard(connection, cardId, true);
+                findAccount(connection, card.accountId(), true);
+                BigDecimal newBalance = card.balance().add(money);
+                updateCardBalance(connection, card.id(), newBalance);
+                updateAccountBalance(connection, card.accountId());
+                insertTransaction(connection, card.accountId(), "DEPOSIT", money, null, null,
+                        "Cash deposit to card " + card.cardNumber());
+                insertHistory(connection, "CARD", card.id(), "DEPOSIT",
+                        "Deposited " + money + "; new balance " + newBalance);
                 connection.commit();
             } catch (Exception e) {
                 connection.rollback();
@@ -92,18 +103,26 @@ public class BankService {
     }
 
     public void withdraw(long accountId, BigDecimal amount) throws SQLException {
+        BankCard card = primaryCard(accountId);
+        withdrawFromCard(card.id(), amount);
+    }
+
+    public void withdrawFromCard(long cardId, BigDecimal amount) throws SQLException {
         BigDecimal money = normalizePositive(amount);
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                Account account = findAccount(connection, accountId, true);
-                BigDecimal newBalance = account.balance().subtract(money);
+                BankCard card = findCard(connection, cardId, true);
+                findAccount(connection, card.accountId(), true);
+                BigDecimal newBalance = card.balance().subtract(money);
                 if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
-                    throw new IllegalArgumentException("Not enough money on account " + accountId);
+                    throw new IllegalArgumentException("Недостаточно средств на балансе");
                 }
-                updateBalance(connection, accountId, newBalance);
-                insertTransaction(connection, accountId, "WITHDRAW", money, null, null, "Cash withdrawal");
-                insertHistory(connection, "ACCOUNT", accountId, "WITHDRAW",
+                updateCardBalance(connection, card.id(), newBalance);
+                updateAccountBalance(connection, card.accountId());
+                insertTransaction(connection, card.accountId(), "WITHDRAW", money, null, null,
+                        "Cash withdrawal from card " + card.cardNumber());
+                insertHistory(connection, "CARD", card.id(), "WITHDRAW",
                         "Withdrew " + money + "; new balance " + newBalance);
                 connection.commit();
             } catch (Exception e) {
@@ -114,49 +133,56 @@ public class BankService {
     }
 
     public long transfer(long fromAccountId, long toAccountId, BigDecimal amount) throws SQLException {
-        return transferToAccount(fromAccountId, toAccountId, amount, "account " + toAccountId);
+        BankCard fromCard = primaryCard(fromAccountId);
+        BankCard toCard = primaryCard(toAccountId);
+        return transferBetweenCards(fromCard.id(), toCard.cardNumber(), amount);
     }
 
-    public long transferToCard(long fromAccountId, String toCardNumber, BigDecimal amount) throws SQLException {
+    public long transferToCard(long fromCardId, String toCardNumber, BigDecimal amount) throws SQLException {
+        return transferBetweenCards(fromCardId, toCardNumber, amount);
+    }
+
+    public long transferBetweenCards(long fromCardId, String toCardNumber, BigDecimal amount) throws SQLException {
         String cleanCardNumber = normalizeCardNumber(toCardNumber);
-        BankCard targetCard = getCardByNumber(cleanCardNumber);
-        return transferToAccount(fromAccountId, targetCard.accountId(), amount, "card " + cleanCardNumber);
-    }
-
-    private long transferToAccount(long fromAccountId, long toAccountId, BigDecimal amount, String targetLabel) throws SQLException {
-        if (fromAccountId == toAccountId) {
-            throw new IllegalArgumentException("Cannot transfer money to the same account");
-        }
-
         BigDecimal money = normalizePositive(amount);
         try (Connection connection = database.connect()) {
             connection.setAutoCommit(false);
             try {
-                long firstLockId = Math.min(fromAccountId, toAccountId);
-                long secondLockId = Math.max(fromAccountId, toAccountId);
-                Account firstLocked = findAccount(connection, firstLockId, true);
-                Account secondLocked = findAccount(connection, secondLockId, true);
-                Account from = firstLocked.id() == fromAccountId ? firstLocked : secondLocked;
-                Account to = firstLocked.id() == toAccountId ? firstLocked : secondLocked;
+                BankCard targetCard = getCardByNumber(connection, cleanCardNumber, false);
+                if (fromCardId == targetCard.id()) {
+                    throw new IllegalArgumentException("Нельзя переводить деньги на эту же карту");
+                }
+
+                long firstLockId = Math.min(fromCardId, targetCard.id());
+                long secondLockId = Math.max(fromCardId, targetCard.id());
+                BankCard firstLocked = findCard(connection, firstLockId, true);
+                BankCard secondLocked = findCard(connection, secondLockId, true);
+                BankCard from = firstLocked.id() == fromCardId ? firstLocked : secondLocked;
+                BankCard to = firstLocked.id() == targetCard.id() ? firstLocked : secondLocked;
+                findAccount(connection, from.accountId(), true);
+                findAccount(connection, to.accountId(), true);
+
                 BigDecimal fromBalance = from.balance().subtract(money);
                 BigDecimal toBalance = to.balance().add(money);
 
                 if (fromBalance.compareTo(BigDecimal.ZERO) < 0) {
-                    throw new IllegalArgumentException("Not enough money on source account " + fromAccountId);
+                    throw new IllegalArgumentException("Недостаточно средств на балансе");
                 }
 
-                updateBalance(connection, fromAccountId, fromBalance);
-                updateBalance(connection, toAccountId, toBalance);
-                long transferId = insertTransfer(connection, fromAccountId, toAccountId, money, "COMPLETED");
-                insertTransaction(connection, fromAccountId, "TRANSFER_OUT", money, toAccountId, transferId,
-                        "Transfer to " + targetLabel);
-                insertTransaction(connection, toAccountId, "TRANSFER_IN", money, fromAccountId, transferId,
-                        "Transfer from account " + fromAccountId);
+                updateCardBalance(connection, from.id(), fromBalance);
+                updateCardBalance(connection, to.id(), toBalance);
+                updateAccountBalance(connection, from.accountId());
+                updateAccountBalance(connection, to.accountId());
+                long transferId = insertTransfer(connection, from.accountId(), to.accountId(), from.id(), to.id(), money, "COMPLETED");
+                insertTransaction(connection, from.accountId(), "TRANSFER_OUT", money, to.accountId(), transferId,
+                        "Transfer to card " + to.cardNumber());
+                insertTransaction(connection, to.accountId(), "TRANSFER_IN", money, from.accountId(), transferId,
+                        "Transfer from card " + from.cardNumber());
                 insertHistory(connection, "TRANSFER", transferId, "COMPLETED",
-                        "Moved " + money + " from account " + fromAccountId + " to account " + toAccountId);
-                insertHistory(connection, "ACCOUNT", fromAccountId, "BALANCE_CHANGED",
+                        "Moved " + money + " from card " + from.cardNumber() + " to card " + to.cardNumber());
+                insertHistory(connection, "CARD", from.id(), "BALANCE_CHANGED",
                         "Transfer " + transferId + "; new balance " + fromBalance);
-                insertHistory(connection, "ACCOUNT", toAccountId, "BALANCE_CHANGED",
+                insertHistory(connection, "CARD", to.id(), "BALANCE_CHANGED",
                         "Transfer " + transferId + "; new balance " + toBalance);
                 connection.commit();
                 return transferId;
@@ -178,7 +204,7 @@ public class BankService {
             connection.setAutoCommit(false);
             try {
                 findAccount(connection, accountId, true);
-                BankCard card = insertCard(connection, accountId);
+                BankCard card = insertCard(connection, accountId, BigDecimal.ZERO);
                 insertHistory(connection, "CARD", card.id(), "ISSUED",
                         "Issued card " + card.maskedNumber() + " for account " + accountId);
                 connection.commit();
@@ -192,9 +218,11 @@ public class BankService {
 
     public List<Account> listAccounts() throws SQLException {
         String sql = """
-                SELECT id, owner, username, balance, status, created_at
-                FROM accounts
-                ORDER BY id
+                SELECT a.id, a.owner, a.username,
+                       COALESCE((SELECT SUM(c.balance) FROM bank_cards c WHERE c.account_id = a.id), a.balance) AS balance,
+                       a.status, a.created_at
+                FROM accounts a
+                ORDER BY a.id
                 """;
         try (Connection connection = database.connect();
              PreparedStatement statement = connection.prepareStatement(sql);
@@ -208,13 +236,18 @@ public class BankService {
     }
 
     public BankCard getCardByNumber(String cardNumber) throws SQLException {
+        try (Connection connection = database.connect()) {
+            return getCardByNumber(connection, cardNumber, false);
+        }
+    }
+
+    private BankCard getCardByNumber(Connection connection, String cardNumber, boolean forUpdate) throws SQLException {
         String sql = """
-                SELECT id, account_id, card_number, expires_at, status, created_at
+                SELECT id, account_id, card_number, balance, expires_at, status, created_at
                 FROM bank_cards
                 WHERE card_number = ?
-                """;
-        try (Connection connection = database.connect();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+                """ + (forUpdate ? " FOR UPDATE" : "");
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, normalizeCardNumber(cardNumber));
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
@@ -227,7 +260,7 @@ public class BankService {
 
     public List<BankCard> listCards(long accountId) throws SQLException {
         String sql = """
-                SELECT id, account_id, card_number, expires_at, status, created_at
+                SELECT id, account_id, card_number, balance, expires_at, status, created_at
                 FROM bank_cards
                 WHERE account_id = ?
                 ORDER BY id
@@ -309,17 +342,18 @@ public class BankService {
         }
     }
 
-    private BankCard insertCard(Connection connection, long accountId) throws SQLException {
+    private BankCard insertCard(Connection connection, long accountId, BigDecimal balance) throws SQLException {
         String sql = """
-                INSERT INTO bank_cards(account_id, card_number, expires_at)
-                VALUES (?, ?, ?)
+                INSERT INTO bank_cards(account_id, card_number, balance, expires_at)
+                VALUES (?, ?, ?, ?)
                 """;
         SQLException lastError = null;
         for (int attempt = 0; attempt < 5; attempt++) {
             try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 statement.setLong(1, accountId);
                 statement.setString(2, generateCardNumber());
-                statement.setDate(3, java.sql.Date.valueOf(LocalDate.now().plusYears(4)));
+                statement.setBigDecimal(3, balance);
+                statement.setDate(4, java.sql.Date.valueOf(LocalDate.now().plusYears(4)));
                 statement.executeUpdate();
                 long cardId = generatedId(statement);
                 return findCard(connection, cardId);
@@ -367,16 +401,18 @@ public class BankService {
     }
 
     private long insertTransfer(Connection connection, long fromAccountId, long toAccountId,
-                                BigDecimal amount, String status) throws SQLException {
+                                long fromCardId, long toCardId, BigDecimal amount, String status) throws SQLException {
         String sql = """
-                INSERT INTO transfers(from_account_id, to_account_id, amount, status)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO transfers(from_account_id, to_account_id, from_card_id, to_card_id, amount, status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement statement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, fromAccountId);
             statement.setLong(2, toAccountId);
-            statement.setBigDecimal(3, amount);
-            statement.setString(4, status);
+            statement.setLong(3, fromCardId);
+            statement.setLong(4, toCardId);
+            statement.setBigDecimal(5, amount);
+            statement.setString(6, status);
             statement.executeUpdate();
             return generatedId(statement);
         }
@@ -416,9 +452,11 @@ public class BankService {
 
     private Account findAccount(Connection connection, long accountId, boolean forUpdate) throws SQLException {
         String sql = """
-                SELECT id, owner, username, balance, status, created_at
-                FROM accounts
-                WHERE id = ?
+                SELECT a.id, a.owner, a.username,
+                       COALESCE((SELECT SUM(c.balance) FROM bank_cards c WHERE c.account_id = a.id), a.balance) AS balance,
+                       a.status, a.created_at
+                FROM accounts a
+                WHERE a.id = ?
                 """ + (forUpdate ? " FOR UPDATE" : "");
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, accountId);
@@ -436,18 +474,26 @@ public class BankService {
     }
 
     private BankCard findCard(Connection connection, long cardId) throws SQLException {
+        return findCard(connection, cardId, false);
+    }
+
+    private BankCard findCard(Connection connection, long cardId, boolean forUpdate) throws SQLException {
         String sql = """
-                SELECT id, account_id, card_number, expires_at, status, created_at
+                SELECT id, account_id, card_number, balance, expires_at, status, created_at
                 FROM bank_cards
                 WHERE id = ?
-                """;
+                """ + (forUpdate ? " FOR UPDATE" : "");
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setLong(1, cardId);
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (!resultSet.next()) {
                     throw new IllegalArgumentException("Card " + cardId + " was not found");
                 }
-                return mapCard(resultSet);
+                BankCard card = mapCard(resultSet);
+                if (!"ACTIVE".equals(card.status())) {
+                    throw new IllegalArgumentException("Card " + cardId + " is not active");
+                }
+                return card;
             }
         }
     }
@@ -458,6 +504,48 @@ public class BankService {
             statement.setBigDecimal(1, balance);
             statement.setLong(2, accountId);
             statement.executeUpdate();
+        }
+    }
+
+    private void updateCardBalance(Connection connection, long cardId, BigDecimal balance) throws SQLException {
+        String sql = "UPDATE bank_cards SET balance = ? WHERE id = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setBigDecimal(1, balance);
+            statement.setLong(2, cardId);
+            statement.executeUpdate();
+        }
+    }
+
+    private void updateAccountBalance(Connection connection, long accountId) throws SQLException {
+        String sql = """
+                UPDATE accounts
+                SET balance = COALESCE((SELECT SUM(balance) FROM bank_cards WHERE account_id = ?), 0)
+                WHERE id = ?
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            statement.setLong(2, accountId);
+            statement.executeUpdate();
+        }
+    }
+
+    private BankCard primaryCard(long accountId) throws SQLException {
+        String sql = """
+                SELECT id, account_id, card_number, balance, expires_at, status, created_at
+                FROM bank_cards
+                WHERE account_id = ?
+                ORDER BY id
+                LIMIT 1
+                """;
+        try (Connection connection = database.connect();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, accountId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    throw new IllegalArgumentException("У аккаунта нет карт");
+                }
+                return mapCard(resultSet);
+            }
         }
     }
 
@@ -479,6 +567,7 @@ public class BankService {
                 resultSet.getLong("id"),
                 resultSet.getLong("account_id"),
                 resultSet.getString("card_number"),
+                resultSet.getBigDecimal("balance"),
                 resultSet.getDate("expires_at").toLocalDate(),
                 resultSet.getString("status"),
                 createdAt.toLocalDateTime()

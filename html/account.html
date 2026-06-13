@@ -20,6 +20,7 @@
         <h2>Пополнение</h2>
         <form method="post" action="/account/deposit">
             <input type="hidden" name="id" value="{{accountId}}">
+            <input type="hidden" name="cardId" id="depositCardId">
             <label>Сумма
                 <input name="amount" required inputmode="decimal" placeholder="250.00">
             </label>
@@ -30,6 +31,7 @@
         <h2>Снятие</h2>
         <form method="post" action="/account/withdraw">
             <input type="hidden" name="id" value="{{accountId}}">
+            <input type="hidden" name="cardId" id="withdrawCardId">
             <label>Сумма
                 <input name="amount" required inputmode="decimal" placeholder="100.00">
             </label>
@@ -40,6 +42,7 @@
         <h2>Перевод</h2>
         <form method="post" action="/account/transfer">
             <input type="hidden" name="fromId" value="{{accountId}}">
+            <input type="hidden" name="fromCardId" id="transferCardId">
             <label>Номер карты получателя
                 <input name="toCard" required inputmode="numeric" maxlength="19" placeholder="4000 1234 5678 9012">
             </label>
@@ -70,7 +73,29 @@ function copyText(value) {
     input.remove();
 }
 
-function toggleCardNumber(button) {
+function selectedCards() {
+    return Array.from(document.querySelectorAll('.bank-card[data-card-id]'));
+}
+
+function selectCard(card) {
+    selectedCards().forEach(item => item.classList.remove('active'));
+    card.classList.add('active');
+
+    const balance = document.getElementById('cardBalance');
+    if (balance) {
+        balance.textContent = card.dataset.balance || '0.00';
+    }
+
+    ['depositCardId', 'withdrawCardId', 'transferCardId'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.value = card.dataset.cardId || '';
+        }
+    });
+}
+
+function toggleCardNumber(event, button) {
+    event.stopPropagation();
     const full = button.dataset.full;
     const mask = button.dataset.mask;
     const isOpen = button.textContent === full;
@@ -81,6 +106,22 @@ function toggleCardNumber(button) {
 function scrollCards(direction) {
     const list = document.getElementById('cardsList');
     if (!list) return;
+    const cards = selectedCards();
+    const activeIndex = cards.findIndex(card => card.classList.contains('active'));
+    const nextIndex = Math.min(Math.max(activeIndex + direction, 0), cards.length - 1);
+    if (cards[nextIndex]) {
+        selectCard(cards[nextIndex]);
+        cards[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        return;
+    }
     list.scrollBy({ left: direction * 340, behavior: 'smooth' });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const active = document.querySelector('.bank-card.active[data-card-id]')
+        || document.querySelector('.bank-card[data-card-id]');
+    if (active) {
+        selectCard(active);
+    }
+});
 </script>

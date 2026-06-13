@@ -305,6 +305,14 @@ tr:last-child td {
     scroll-snap-align: center;
     border: 0;
     text-align: left;
+    cursor: pointer;
+    box-shadow: 0 0 0 0 rgba(18, 111, 106, 0);
+    transition: transform .16s ease, box-shadow .16s ease;
+}
+
+.bank-card.active {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 3px rgba(18, 111, 106, .28);
 }
 
 .add-card-form {

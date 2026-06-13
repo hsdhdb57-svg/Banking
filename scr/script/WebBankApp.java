@@ -106,12 +106,13 @@ public class WebBankApp {
         Account account = bankService.getAccount(accountId);
         List<BankCard> cards = bankService.listCards(accountId);
         List<TransactionRecord> transactions = bankService.listTransactions(accountId);
+        String selectedBalance = cards.isEmpty() ? "0.00" : cards.get(0).balance().toString();
 
         return page("Account", template("account.html", Map.of(
                 "accountId", String.valueOf(account.id()),
                 "owner", escape(account.owner()),
                 "username", escape(account.username()),
-                "balance", escape(account.balance().toString()),
+                "balance", escape(selectedBalance),
                 "message", queryMessage(query),
                 "cards", cardsHtml(cards, account.id()),
                 "transactions", transactionsTable(transactions)
@@ -122,9 +123,9 @@ public class WebBankApp {
         String tables = tableSection("accounts", "accounts",
                 "SELECT id, owner, username, password, balance, status, created_at FROM accounts ORDER BY id")
                 + tableSection("bank_cards", "bank_cards",
-                "SELECT id, account_id, card_number, expires_at, status, created_at FROM bank_cards ORDER BY id")
+                "SELECT id, account_id, card_number, balance, expires_at, status, created_at FROM bank_cards ORDER BY id")
                 + tableSection("transfers", "transfers",
-                "SELECT id, from_account_id, to_account_id, amount, status, created_at FROM transfers ORDER BY id")
+                "SELECT id, from_account_id, to_account_id, from_card_id, to_card_id, amount, status, created_at FROM transfers ORDER BY id")
                 + tableSection("transactions", "transactions",
                 "SELECT id, account_id, type, amount, related_account_id, transfer_id, description, created_at FROM transactions ORDER BY id")
                 + tableSection("change_history", "change_history",
@@ -160,22 +161,37 @@ public class WebBankApp {
     private void deposit(HttpExchange exchange) throws Exception {
         Map<String, String> form = form(exchange);
         long accountId = number(form.get("id"));
-        bankService.deposit(accountId, money(form.get("amount")));
-        redirect(exchange, "/account?id=" + accountId + "&message=" + url("Счет пополнен"));
+        try {
+            long cardId = number(form.get("cardId"));
+            bankService.depositToCard(cardId, money(form.get("amount")));
+            redirect(exchange, "/account?id=" + accountId + "&message=" + url("Карта пополнена"));
+        } catch (Exception e) {
+            redirect(exchange, "/account?id=" + accountId + "&message=" + url(friendlyError(e)));
+        }
     }
 
     private void withdraw(HttpExchange exchange) throws Exception {
         Map<String, String> form = form(exchange);
         long accountId = number(form.get("id"));
-        bankService.withdraw(accountId, money(form.get("amount")));
-        redirect(exchange, "/account?id=" + accountId + "&message=" + url("Деньги сняты"));
+        try {
+            long cardId = number(form.get("cardId"));
+            bankService.withdrawFromCard(cardId, money(form.get("amount")));
+            redirect(exchange, "/account?id=" + accountId + "&message=" + url("Деньги сняты"));
+        } catch (Exception e) {
+            redirect(exchange, "/account?id=" + accountId + "&message=" + url(friendlyError(e)));
+        }
     }
 
     private void transfer(HttpExchange exchange) throws Exception {
         Map<String, String> form = form(exchange);
         long fromId = number(form.get("fromId"));
-        bankService.transferToCard(fromId, form.get("toCard"), money(form.get("amount")));
-        redirect(exchange, "/account?id=" + fromId + "&message=" + url("Перевод выполнен"));
+        try {
+            long fromCardId = number(form.get("fromCardId"));
+            bankService.transferToCard(fromCardId, form.get("toCard"), money(form.get("amount")));
+            redirect(exchange, "/account?id=" + fromId + "&message=" + url("Перевод выполнен"));
+        } catch (Exception e) {
+            redirect(exchange, "/account?id=" + fromId + "&message=" + url(friendlyError(e)));
+        }
     }
 
     private void issueCard(HttpExchange exchange) throws Exception {
@@ -237,16 +253,21 @@ public class WebBankApp {
         for (BankCard card : cards) {
             html.append("<article class=\"bank-card")
                     .append(first ? " active" : "")
-                    .append("\">")
+                    .append("\" data-card-id=\"")
+                    .append(card.id())
+                    .append("\" data-balance=\"")
+                    .append(escape(card.balance().toString()))
+                    .append("\" onclick=\"selectCard(this)\">")
                     .append("<span>").append(escape(card.status())).append("</span>")
                     .append("<button class=\"card-number\" type=\"button\" data-full=\"")
                     .append(escape(card.cardNumber()))
                     .append("\" data-mask=\"")
                     .append(escape(card.maskedNumber()))
-                    .append("\" onclick=\"toggleCardNumber(this)\">")
+                    .append("\" onclick=\"toggleCardNumber(event, this)\">")
                     .append(escape(card.maskedNumber()))
                     .append("</button>")
                     .append("<small>до ").append(escape(card.expiresAt().toString()))
+                    .append(" · баланс ").append(escape(card.balance().toString()))
                     .append("</small>")
                     .append("</article>");
             first = false;
@@ -433,6 +454,26 @@ public class WebBankApp {
             return "";
         }
         return "<p class=\"message\">" + escape(message) + "</p>";
+    }
+
+    private String friendlyError(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Операция не выполнена";
+        }
+        if (message.contains("Card was not found")) {
+            return "Карта получателя не найдена";
+        }
+        if (message.contains("Card number must contain 16 digits")) {
+            return "Номер карты должен содержать 16 цифр";
+        }
+        if (message.contains("Amount must be greater than zero")) {
+            return "Сумма должна быть больше нуля";
+        }
+        if (message.contains("Недостаточно средств") || message.contains("Нельзя переводить")) {
+            return message;
+        }
+        return "Операция не выполнена: " + message;
     }
 
     private void redirect(HttpExchange exchange, String location) throws IOException {
